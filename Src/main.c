@@ -42,17 +42,22 @@ void proccesDmaData(uint8_t sign);
 
 #define STATUS_PERIOD_MS     2000
 #define MAX_STRING_LENGTH    35
+#define TX_MESSAGE_SIZE      128
 
 volatile uint32_t g_ms = 0;
 
-letter_count_ letterCount;
+letter_count_ letterCount = {0};
 
-static char rxString[MAX_STRING_LENGTH + 1];
+static char rxString[MAX_STRING_LENGTH + 1] = {0};
 static uint8_t rxLength = 0;
 static uint8_t collecting = 0;
 static volatile uint8_t stringReady = 0;
 
-static char txMessage[128];
+static char txMessage[TX_MESSAGE_SIZE] = {0};
+
+static void waitForTxReady(void);
+static void sendBufferStatus(void);
+static void sendValidString(void);
 
 
 int main(void)
@@ -74,8 +79,6 @@ int main(void)
   /* Space for your local variables, callback registration ...*/
 
   uint32_t lastMs = 0;
-  int used;
-  int load;
 
   USART2_RegisterCallback(proccesDmaData);
   SysTick_Config(SystemCoreClock / 1000);
@@ -97,31 +100,47 @@ int main(void)
 	  if(g_ms - lastMs >= STATUS_PERIOD_MS)
 	  {
 		  lastMs = g_ms;
-
-		  used = DMA_USART2_BUFFER_SIZE - LL_DMA_GetDataLength(DMA1, LL_DMA_CHANNEL_6);
-		  load = used * 1000 / DMA_USART2_BUFFER_SIZE;
-
-		  while(LL_DMA_IsEnabledChannel(DMA1, LL_DMA_CHANNEL_7));
-
-		  sprintf(txMessage, "Buffer capacity: %d bytes, occupied memory: %d bytes, load [in %%]: %d.%d%%\r\n",
-				  DMA_USART2_BUFFER_SIZE, used, load / 10, load % 10);
-
-		  USART2_PutBuffer((uint8_t *)txMessage, strlen(txMessage));
+		  sendBufferStatus();
 	  }
 
 	  if(stringReady)
 	  {
 		  stringReady = 0;
-
-		  while(LL_DMA_IsEnabledChannel(DMA1, LL_DMA_CHANNEL_7));
-
-		  sprintf(txMessage, "Valid string: %s, lower-case: %d, upper-case: %d\r\n",
-				  rxString, letterCount.small_letter, letterCount.capital_letter);
-
-		  USART2_PutBuffer((uint8_t *)txMessage, strlen(txMessage));
+		  sendValidString();
 	  }
   }
   /* USER CODE END 3 */
+}
+
+
+static void waitForTxReady(void)
+{
+	while(LL_DMA_IsEnabledChannel(DMA1, LL_DMA_CHANNEL_7));
+}
+
+
+static void sendBufferStatus(void)
+{
+	int used = DMA_USART2_BUFFER_SIZE - LL_DMA_GetDataLength(DMA1, LL_DMA_CHANNEL_6);
+	int load = used * 1000 / DMA_USART2_BUFFER_SIZE;
+
+	waitForTxReady();
+
+	sprintf(txMessage, "Buffer capacity: %d bytes, occupied memory: %d bytes, load [in %%]: %d.%d%%\r\n",
+			DMA_USART2_BUFFER_SIZE, used, load / 10, load % 10);
+
+	USART2_PutBuffer((uint8_t *)txMessage, strlen(txMessage));
+}
+
+
+static void sendValidString(void)
+{
+	waitForTxReady();
+
+	sprintf(txMessage, "Valid string: %s, lower-case: %d, upper-case: %d\r\n",
+			rxString, letterCount.small_letter, letterCount.capital_letter);
+
+	USART2_PutBuffer((uint8_t *)txMessage, strlen(txMessage));
 }
 
 
@@ -163,8 +182,6 @@ void proccesDmaData(uint8_t sign)
 {
 	/* Process received data */
 
-	int i;
-
 	if(sign == '#')
 	{
 		collecting = 1;
@@ -184,7 +201,7 @@ void proccesDmaData(uint8_t sign)
 		letterCount.small_letter = 0;
 		letterCount.capital_letter = 0;
 
-		for(i = 0; i < rxLength; i++)
+		for(uint8_t i = 0; i < rxLength; i++)
 		{
 			if(rxString[i] >= 'a' && rxString[i] <= 'z') letterCount.small_letter++;
 			if(rxString[i] >= 'A' && rxString[i] <= 'Z') letterCount.capital_letter++;
