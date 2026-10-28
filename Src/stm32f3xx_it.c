@@ -59,6 +59,7 @@
 /* External variables --------------------------------------------------------*/
 
 /* USER CODE BEGIN EV */
+extern volatile uint32_t g_ms;
 
 /* USER CODE END EV */
 
@@ -183,6 +184,7 @@ void PendSV_Handler(void)
 void SysTick_Handler(void)
 {
   /* USER CODE BEGIN SysTick_IRQn 0 */
+  g_ms++;
 
   /* USER CODE END SysTick_IRQn 0 */
   

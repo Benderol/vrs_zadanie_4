@@ -23,6 +23,8 @@
 #include "dma.h"
 #include "usart.h"
 #include "gpio.h"
+#include <stdio.h>
+#include <string.h>
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
@@ -38,7 +40,19 @@ void proccesDmaData(uint8_t sign);
 
 /* Space for your global variables. */
 
-	// type your global variables here:
+#define STATUS_PERIOD_MS     2000
+#define MAX_STRING_LENGTH    35
+
+volatile uint32_t g_ms = 0;
+
+letter_count_ letterCount;
+
+static char rxString[MAX_STRING_LENGTH + 1];
+static uint8_t rxLength = 0;
+static uint8_t collecting = 0;
+static volatile uint8_t stringReady = 0;
+
+static char txMessage[128];
 
 
 int main(void)
@@ -59,7 +73,12 @@ int main(void)
 
   /* Space for your local variables, callback registration ...*/
 
-  	  //type your code here:
+  uint32_t lastMs = 0;
+  int used;
+  int load;
+
+  USART2_RegisterCallback(proccesDmaData);
+  SysTick_Config(SystemCoreClock / 1000);
 
   while (1)
   {
@@ -75,7 +94,32 @@ int main(void)
 	   * Example message (what I wish to see in terminal) - Valid string: Platn15uborZnakov, lower-case: 13, upper-case: 2
 	   */
 
-  	  	  	  //type your code here:
+	  if(g_ms - lastMs >= STATUS_PERIOD_MS)
+	  {
+		  lastMs = g_ms;
+
+		  used = DMA_USART2_BUFFER_SIZE - LL_DMA_GetDataLength(DMA1, LL_DMA_CHANNEL_6);
+		  load = used * 1000 / DMA_USART2_BUFFER_SIZE;
+
+		  while(LL_DMA_IsEnabledChannel(DMA1, LL_DMA_CHANNEL_7));
+
+		  sprintf(txMessage, "Buffer capacity: %d bytes, occupied memory: %d bytes, load [in %%]: %d.%d%%\r\n",
+				  DMA_USART2_BUFFER_SIZE, used, load / 10, load % 10);
+
+		  USART2_PutBuffer((uint8_t *)txMessage, strlen(txMessage));
+	  }
+
+	  if(stringReady)
+	  {
+		  stringReady = 0;
+
+		  while(LL_DMA_IsEnabledChannel(DMA1, LL_DMA_CHANNEL_7));
+
+		  sprintf(txMessage, "Valid string: %s, lower-case: %d, upper-case: %d\r\n",
+				  rxString, letterCount.small_letter, letterCount.capital_letter);
+
+		  USART2_PutBuffer((uint8_t *)txMessage, strlen(txMessage));
+	  }
   }
   /* USER CODE END 3 */
 }
@@ -119,7 +163,46 @@ void proccesDmaData(uint8_t sign)
 {
 	/* Process received data */
 
-		// type your algorithm here:
+	int i;
+
+	if(sign == '#')
+	{
+		collecting = 1;
+		rxLength = 0;
+		return;
+	}
+
+	if(collecting == 0)
+	{
+		return;
+	}
+
+	if(sign == '$')
+	{
+		rxString[rxLength] = 0;
+
+		letterCount.small_letter = 0;
+		letterCount.capital_letter = 0;
+
+		for(i = 0; i < rxLength; i++)
+		{
+			if(rxString[i] >= 'a' && rxString[i] <= 'z') letterCount.small_letter++;
+			if(rxString[i] >= 'A' && rxString[i] <= 'Z') letterCount.capital_letter++;
+		}
+
+		collecting = 0;
+		stringReady = 1;
+		return;
+	}
+
+	if(rxLength >= MAX_STRING_LENGTH)
+	{
+		collecting = 0;
+		return;
+	}
+
+	rxString[rxLength] = sign;
+	rxLength++;
 }
 
 
